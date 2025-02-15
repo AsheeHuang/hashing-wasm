@@ -12,12 +12,6 @@ The elastic hash table is designed for open addressing without reordering and ac
 
 Currently, only the elastic hashing portion is implemented. Future work will include a web demo (using WebAssembly) and additional algorithms (e.g., funnel hashing).
 
-## Features
-
-- **Multi-Level Hash Table:** The table is divided into multiple levels, with each level's capacity roughly half of the previous one.
-- **Elastic Hashing Core Algorithm:** Implements the insertion strategy described in the paper.
-- **Quadratic Probing:** Uses quadratic probing based on `DefaultHasher` to generate probe sequences.
-- **Basic Search Functionality:** Supports key-value insertions and search.
 
 ## Installation
 
@@ -29,7 +23,7 @@ Currently, only the elastic hashing portion is implemented. Future work will inc
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/hashing-wasm.git
+git clone https://github.com/asheehuang/hashing-wasm.git
 cd hashing-wasm
 ```
 
