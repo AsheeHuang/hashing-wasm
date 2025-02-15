@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Elastic Hash Table Demo</title>
+    <style>
+      .container {
+        margin: 20px;
+      }
+      button, input {
+        margin: 5px;
+        padding: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Elastic Hash Table Demo</h1>
+      <div>
+        <input type="text" id="keyInput" placeholder="Enter a key">
+        <button id="insertBtn">Insert</button>
+        <button id="statusBtn">Print Status</button>
+      </div>
+      <pre id="output"></pre>
+    </div>
+
+    <script type="module">
+      import init, { JsElasticHashTable } from './pkg/hashing_wasm.js';
+
+      let table;
+
+      async function run() {
+        await init();
+        // Create a new table with capacity 10000 and delta 0.01
+        table = new JsElasticHashTable(10000, 0.01);
+
+        // Set up event listeners
+        document.getElementById('insertBtn').addEventListener('click', () => {
+          const key = document.getElementById('keyInput').value;
+          if (key) {
+            try {
+              table.insert(key);
+              document.getElementById('keyInput').value = '';
+              printStatus();
+            } catch (e) {
+              console.error(e);
+              document.getElementById('output').textContent = `Error: ${e.message}`;
+            }
+          }
+        });
+
+        document.getElementById('statusBtn').addEventListener('click', printStatus);
+      }
+
+      function printStatus() {
+        // Capture console.log output
+        const oldLog = console.log;
+        let output = '';
+        console.log = (msg) => {
+          output += msg + '\n';
+        };
+
+        table.print_status();
+
+        // Restore console.log
+        console.log = oldLog;
+
+        // Display the output
+        document.getElementById('output').textContent = output;
+      }
+
+      run();
+    </script>
+  </body>
+</html>
