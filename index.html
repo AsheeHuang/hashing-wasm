@@ -3,25 +3,84 @@
   <head>
     <meta charset="utf-8">
     <title>Elastic Hash Table Demo</title>
-    <style>
-      .container {
-        margin: 20px;
-      }
-      button, input {
-        margin: 5px;
-        padding: 5px;
-      }
-    </style>
+    <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <div class="container">
       <h1>Elastic Hash Table Demo</h1>
-      <div>
-        <input type="text" id="keyInput" placeholder="Enter a key">
-        <button id="insertBtn">Insert</button>
-        <button id="statusBtn">Print Status</button>
+
+      <!-- Tab Navigation -->
+      <div class="tabs">
+        <button class="tablinks active" data-tab="new">Create new table</button>
+        <button class="tablinks" data-tab="insert">Insert one key-value pair</button>
+        <button class="tablinks" data-tab="bulk">Insert multiple key-value pairs</button>
+        <button class="tablinks" data-tab="search">Search by key</button>
       </div>
-      <pre id="output"></pre>
+
+      <!-- Tab Content -->
+      <div class="tab-content">
+        <!-- New Table Tab -->
+        <div class="tab-pane" id="new" style="display: block;">
+          <div class="section">
+            <h2>Create New Hash Table</h2>
+            <div class="input-group">
+              <label for="capacity">Capacity:</label>
+              <input type="number" id="capacity" value="10000" min="1">
+            </div>
+            <div class="input-group">
+              <label for="delta">Delta:</label>
+              <input type="number" id="delta" value="0.01" min="0.0001" max="0.9999" step="0.0001">
+            </div>
+            <button id="createBtn">Create Table</button>
+          </div>
+        </div>
+
+        <!-- Insert Tab -->
+        <div class="tab-pane" id="insert" style="display: none;">
+          <div class="section">
+            <h2>Insert one key-value pair</h2>
+            <div class="input-group">
+              <label for="keyInput">Key:</label>
+              <input type="text" id="keyInput" placeholder="Enter key">
+            </div>
+            <div class="input-group">
+              <label for="valueInput">Value:</label>
+              <input type="text" id="valueInput" placeholder="Enter value">
+            </div>
+            <button id="insertBtn">Insert</button>
+          </div>
+        </div>
+
+        <!-- Bulk Insert Tab -->
+        <div class="tab-pane" id="bulk" style="display: none;">
+          <div class="section">
+            <h2>Insert multiple key-value pairs randomly</h2>
+            <div class="input-group">
+              <label for="count">Count:</label>
+              <input type="number" id="count" value="10" min="1">
+            </div>
+            <button id="bulkInsertBtn">Insert</button>
+          </div>
+        </div>
+
+        <!-- Search Tab -->
+        <div class="tab-pane" id="search" style="display: none;">
+          <div class="section">
+            <h2>Search</h2>
+            <div class="input-group">
+              <label for="searchKey">Search Key:</label>
+              <input type="text" id="searchKey" placeholder="Enter key to search">
+            </div>
+            <button id="searchBtn">Search</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output Section (always visible and appends messages) -->
+      <div class="section">
+        <h2>Output</h2>
+        <pre id="output"></pre>
+      </div>
     </div>
 
     <script type="module">
@@ -29,47 +88,145 @@
 
       let table;
 
+      // Clear the output area (only used when creating a new table)
+      function clearOutput() {
+        document.getElementById('output').textContent = "";
+      }
+
+      // Append a new message to the output area
+      function appendOutput(message) {
+        const output = document.getElementById('output');
+        output.textContent += message + "\n";
+      }
+
+      // Switch the visible tab
+      function switchTab(tabName) {
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        tabPanes.forEach(pane => {
+          pane.style.display = pane.id === tabName ? 'block' : 'none';
+        });
+        const tabs = document.querySelectorAll('.tablinks');
+        tabs.forEach(tab => {
+          if (tab.getAttribute('data-tab') === tabName) {
+            tab.classList.add('active');
+          } else {
+            tab.classList.remove('active');
+          }
+        });
+      }
+
       async function run() {
         await init();
-        // Create a new table with capacity 10000 and delta 0.01
-        table = new JsElasticHashTable(10000, 0.01);
 
-        // Set up event listeners
+        // Create an initial table
+        table = new JsElasticHashTable(10000, 0.01);
+        clearOutput();
+        appendOutput("Created initial table with capacity 10000 and delta 0.01");
+
+        // Tab switching listeners
+        const tabButtons = document.querySelectorAll('.tablinks');
+        tabButtons.forEach(button => {
+          button.addEventListener('click', () => {
+            const tab = button.getAttribute('data-tab');
+            switchTab(tab);
+          });
+        });
+
+        // Create new table (clears the output)
+        document.getElementById('createBtn').addEventListener('click', () => {
+          const capacity = parseInt(document.getElementById('capacity').value);
+          const delta = parseFloat(document.getElementById('delta').value);
+          try {
+            table = new JsElasticHashTable(capacity, delta);
+            clearOutput();
+            appendOutput(`Created new table with capacity ${capacity} and delta ${delta}`);
+          } catch (e) {
+            appendOutput(`Error: ${e.message}`);
+          }
+        });
+
+        // Single Insert operation (appends output)
         document.getElementById('insertBtn').addEventListener('click', () => {
+          if (!table) {
+            appendOutput("Error: Please create a table first");
+            return;
+          }
           const key = document.getElementById('keyInput').value;
-          if (key) {
+          const value = document.getElementById('valueInput').value;
+          if (!key || !value) {
+            appendOutput("Error: Both key and value are required");
+            return;
+          }
+          try {
+            table.insert(key, value);
+            appendOutput(`Inserted: ${key} => ${value}`);
+            document.getElementById('keyInput').value = '';
+            document.getElementById('valueInput').value = '';
+          } catch (e) {
+            appendOutput(`Error: ${e.message}`);
+          }
+        });
+
+        // Bulk Insert operation (random insert n key-value pairs, appends output)
+        document.getElementById('bulkInsertBtn').addEventListener('click', () => {
+          if (!table) {
+            appendOutput("Error: Please create a table first");
+            return;
+          }
+          const count = parseInt(document.getElementById('count').value);
+          if (count < 2) {
+            appendOutput("Error: Count must be greater than 1");
+            return;
+          }
+          let firstInserted = null;
+          let lastInserted = null;
+          // Attempt to insert count pairs
+          for (let i = 0; i < count; i++) {
+            // key and value: first 6 characters of a newly generated UUID
+            const key = crypto.randomUUID().substring(0,6);
+            const value = crypto.randomUUID().substring(0,6);
             try {
-              table.insert(key);
-              document.getElementById('keyInput').value = '';
-              printStatus();
+              table.insert(key, value);
+              if (i == 0) {
+                firstInserted = { key, value };
+                appendOutput(`First inserted: ${key} => ${value}`);
+              }
+              if (i == count - 2) {
+                appendOutput(`...(${count - 2} more pairs)`);
+              }
+              if (i == count - 1) {
+                lastInserted = { key, value };
+                appendOutput(`Last inserted: ${key} => ${value}`);
+                appendOutput(`Bulk insert complete.`);
+              }
             } catch (e) {
-              console.error(e);
-              document.getElementById('output').textContent = `Error: ${e.message}`;
+              clearOutput();
+              appendOutput(`Failed to insert ${key}: ${e.message}`);
+              break;
             }
           }
         });
 
-        document.getElementById('statusBtn').addEventListener('click', printStatus);
+        // Search operation (appends output)
+        document.getElementById('searchBtn').addEventListener('click', () => {
+          if (!table) {
+            appendOutput("Error: Please create a table first");
+            return;
+          }
+          const key = document.getElementById('searchKey').value;
+          if (!key) {
+            appendOutput("Error: Please enter a key to search");
+            return;
+          }
+          const result = table.search(key);
+          if (result) {
+            appendOutput(`Found: ${key} => ${result}`);
+          } else {
+            appendOutput(`Key not found: ${key}`);
+          }
+        });
       }
 
-      function printStatus() {
-        // Capture console.log output
-        const oldLog = console.log;
-        let output = '';
-        console.log = (msg) => {
-          output += msg + '\n';
-        };
-
-        table.print_status();
-
-        // Restore console.log
-        console.log = oldLog;
-
-        // Display the output
-        document.getElementById('output').textContent = output;
-      }
-
-      run();
-    </script>
+      run(); </script>
   </body>
 </html>

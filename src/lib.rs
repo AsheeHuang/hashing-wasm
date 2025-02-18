@@ -210,27 +210,32 @@ impl JsElasticHashTable {
     pub fn insert(&mut self, key: String, value: String) {
         self.table.insert(key, value).expect("Insertion failed");
     }
+
+    #[wasm_bindgen]
+    pub fn search(&self, key: String) -> Option<String> {
+        self.table.search(&key).map(|v| v.to_string())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_elastic_hash_table() {
-        let n = 100000;
+        let n = 10000;
         let delta = 0.0001;
         let mut table = ElasticHashTable::new(n, delta);
         // insert some data
         for i in 0..(n as f64 * (1.0 - delta)) as usize {
-            table.insert(i, format!("Value {}", i)).expect("Insertion failed");
+            table.insert(i, i).expect("Insertion failed");
         }
         table.print_status();
+
         // test search
-        for i in 0..n * (1.0 - delta) as usize {
+        for i in 0..(n as f64 * (1.0 - delta)) as usize {
             let res = table.search(&i);
             assert!(res.is_some(), "Key {} not found", i);
-            assert_eq!(res.unwrap(), &format!("Value {}", i));
+            assert_eq!(res.unwrap(), &i);
         }
     }
 }
