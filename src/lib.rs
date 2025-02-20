@@ -11,6 +11,7 @@ pub struct ElasticHashTable<K, V> {
     occupancies: Vec<usize>,
     c: f64,
 }
+const THRESHOLD: f64 = 0.25;
 
 impl<K, V> ElasticHashTable<K, V>
 where
@@ -87,95 +88,93 @@ where
     /// - for non-last levels, first calculate the load of the current level, then calculate the probe_limit based on the load,
     ///   then decide which strategy to use based on the state of the next level (load_next and 0.25 threshold).
     /// - for the last level, scan the entire level.
-    pub fn insert(&mut self, key: K, value: V) -> Result<(), String> {
+    pub fn insert(&mut self, key: K, value: V) -> Result<(usize, usize), String> {
         if self.num_inserts >= self.max_inserts {
             self.print_status();
             return Err("Hash table is full (maximum allowed insertions reached).".into());
         }
-        for i in 0..self.levels.len() {
+        for i in 0..self.levels.len() - 1 {
             let level_size = self.levels[i].len();
             let load = self.level_load(i);
-            // calculate probe_limit, simulate f(ε)=c×min(log₂(1/ε), log₂(1/δ))
-            let log_inv_load = if load > 0.0 { (1.0 / load).log2() } else { 0.0 };
-            let log_inv_delta = (1.0 / self.delta).log2();
-            let probe_limit = cmp::max(
-                1,
-                (self.c * log_inv_load.min(log_inv_delta)).ceil() as usize,
-            );
 
-            if i < self.levels.len() - 1 {
-                // non-last level: calculate the load of the next level
-                let next_load = self.level_load(i + 1);
-                let threshold = 0.25;
-                if load > (self.delta / 2.0) && next_load > threshold {
-                    // Case 1: try limited probes in the current level
-                    for j in 0..probe_limit {
-                        let idx = self.quad_probe(&key, i, j, level_size);
-                        if self.levels[i][idx].is_none() {
-                            self.levels[i][idx] = Some((key.clone(), value.clone()));
-                            self.occupancies[i] += 1;
-                            self.num_inserts += 1;
-                            return Ok(());
-                        }
-                    }
-                    // if insertion fails in the current level, try a fixed number of probes in the next level (here using the ceiling of c)
-                    let next_probe_limit = cmp::max(1, self.c.ceil() as usize);
-                    let next_size = self.levels[i + 1].len();
-                    for j in 0..next_probe_limit {
-                        let idx = self.quad_probe(&key, i + 1, j, next_size);
-                        if self.levels[i + 1][idx].is_none() {
-                            self.levels[i + 1][idx] = Some((key.clone(), value.clone()));
-                            self.occupancies[i + 1] += 1;
-                            self.num_inserts += 1;
-                            return Ok(());
-                        }
-                    }
-                } else if load <= (self.delta / 2.0) {
-                    // Case 2: current level has too few empty slots, skip and try the next level
-                    continue;
-                } else if next_load <= threshold {
-                    // Case 3: next level is full, must scan all slots in the current level
-                    for j in 0..level_size {
-                        let idx = self.quad_probe(&key, i, j, level_size);
-                        if self.levels[i][idx].is_none() {
-                            self.levels[i][idx] = Some((key.clone(), value.clone()));
-                            self.occupancies[i] += 1;
-                            self.num_inserts += 1;
-                            return Ok(());
-                        }
+            // non-last level: calculate the load of the next level
+            let next_load = self.level_load(i + 1);
+            if load > (self.delta / 2.0) && next_load > THRESHOLD {
+                // calculate probe_limit, simulate f(ε)=c×min(log₂(1/ε), log₂(1/δ))
+                let log_inv_load = if load > 0.0 { (1.0 / load).log2() } else { 0.0 };
+                let log_inv_delta = (1.0 / self.delta).log2();
+                let probe_limit = cmp::max(
+                    1,
+                    (self.c * log_inv_load.min(log_inv_delta)).ceil() as usize,
+                );
+                // Case 1: try limited probes in the current level
+                for j in 0..probe_limit {
+                    let idx = self.quad_probe(&key, i, j, level_size);
+                    if self.levels[i][idx].is_none() {
+                        self.levels[i][idx] = Some((key.clone(), value.clone()));
+                        self.occupancies[i] += 1;
+                        self.num_inserts += 1;
+                        return Ok((i, idx));
                     }
                 }
-            } else {
-                // last level: scan the entire level
+                // if insertion fails in the current level, try a fixed number of probes in the next level (here using the ceiling of c)
+                let next_size = self.levels[i + 1].len();
+                for j in 0..self.c.ceil() as usize{
+                    let idx = self.quad_probe(&key, i + 1, j, next_size);
+                    if self.levels[i + 1][idx].is_none() {
+                        self.levels[i + 1][idx] = Some((key.clone(), value.clone()));
+                        self.occupancies[i + 1] += 1;
+                        self.num_inserts += 1;
+                        return Ok((i + 1, idx));
+                    }
+                }
+            } else if load <= (self.delta / 2.0) {
+                // Case 2: current level has too few empty slots, skip and try the next level
+                continue;
+            } else if next_load <= THRESHOLD {
+                // Case 3: next level is full, must scan all slots in the current level
                 for j in 0..level_size {
                     let idx = self.quad_probe(&key, i, j, level_size);
                     if self.levels[i][idx].is_none() {
                         self.levels[i][idx] = Some((key.clone(), value.clone()));
                         self.occupancies[i] += 1;
                         self.num_inserts += 1;
-                        return Ok(());
+                        return Ok((i, idx));
                     }
                 }
             }
         }
-        self.print_status();
+        // last level: scan the entire level by borrowing it directly
+        let last_level_size = self.levels[self.levels.len() - 1].len();
+        for j in 0..last_level_size {
+            let idx = self.quad_probe(&key, self.levels.len() - 1, j, last_level_size);
+            {
+                let last = self.levels.len() - 1;
+                let last_level = &mut self.levels[last];
+                if last_level[idx].is_none() {
+                    last_level[idx] = Some((key.clone(), value.clone()));
+                    self.occupancies[last] += 1;
+                    self.num_inserts += 1;
+                    return Ok((last, idx));
+                }
+            }
+        }
         Err("Insertion failed in all levels; hash table is full.".into())
     }
 
-    /// search for the given key, return Some(&value) if found
+    // search algorithm is not correct
     pub fn search<Q: ?Sized>(&self, key: &Q) -> Option<&V>
     where
         K: std::borrow::Borrow<Q>,
         Q: Hash + Eq,
     {
-        for i in 0..self.levels.len() {
-            let level_size = self.levels[i].len();
-            for j in 0..level_size {
-                let idx = self.quad_probe(key, i, j, level_size);
-                match &self.levels[i][idx] {
-                    Some((k, v)) if k.borrow() == key => return Some(v),
-                    None => break,
-                    _ => continue,
+        for i in 0..self.levels.len() - 1 {
+            for j in 0..self.levels[i].len() {
+                let idx = self.quad_probe(&key, i, j, self.levels[i].len());
+                if let Some((ref k, ref v)) = self.levels[i][idx] {
+                    if k.borrow() == key {
+                        return Some(v);
+                    }
                 }
             }
         }
@@ -220,14 +219,25 @@ impl JsElasticHashTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use env_logger;
+    use log::LevelFilter;
+
+    fn init() {
+        let _ = env_logger::builder()
+            .filter_level(LevelFilter::Debug)
+            .is_test(true)
+            .try_init();
+    }
+
     #[test]
     fn test_elastic_hash_table() {
+        init();
         let n = 10000;
-        let delta = 0.0001;
+        let delta = 0.01;
         let mut table = ElasticHashTable::new(n, delta);
-        // insert some data
+
         for i in 0..(n as f64 * (1.0 - delta)) as usize {
-            table.insert(i, i).expect("Insertion failed");
+            table.insert(i, i << 1).expect("Insertion failed");
         }
         table.print_status();
 
@@ -235,7 +245,28 @@ mod tests {
         for i in 0..(n as f64 * (1.0 - delta)) as usize {
             let res = table.search(&i);
             assert!(res.is_some(), "Key {} not found", i);
+            assert_eq!(res.unwrap(), &(i << 1));
+        }
+    }
+
+    #[test]
+    fn test_small_elastic_hash_table() {
+        init();
+        let n = 10;
+        let delta = 0.1;
+        let mut table = ElasticHashTable::new(n, delta);
+
+        for i in 0..9 {
+            let res = table.insert(i, i).expect("Insertion failed");
+            println!("{:?}", res);
+        }
+        table.print_status();
+
+        for i in 0..9 {
+            let res = table.search(&i);
+            assert!(res.is_some(), "Key {} not found", i);
             assert_eq!(res.unwrap(), &i);
         }
     }
+
 }
